@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<body>
+<canvas width=500 height=500></canvas>
+<script src="matrix.js"></script>
+<script>
+const room = document.querySelector`canvas`.getContext`2d`;
+room.size = room.size = 500;
+room.graph = 8;
+const gPos = (p,axis) => axis ? room.graph * (1 - p / room.size) : p / room.size * room.graph;
+const cPos = (p,axis) => axis ? room.size * (1 - p / room.graph) : p / room.graph * room.size;
+const shuffle = a => {
+  let j, x;
+  for (let i = a.length - 1; i > 0; i--) {
+    j = Math.random() * (i + 1) | 0;
+    x = a[i]; a[i] = a[j]; a[j] = x;
+  }
+  return a;
+};
+
+let points = [];
+let angles = [0, Math.PI * 2 / 3, Math.PI * 4 / 3];
+angles.forEach((angle,idx) => {
+  Array(200).fill().forEach((_,i) => {
+    let center = gPos(room.size / 2),
+        err = [Math.random() / 4, Math.random() * 360],
+        ang = i * 4 / 800 * Math.PI + angle;
+    points.push({
+      inp: [
+        center + (i + 20) * .015 * Math.cos(ang) + err[0] * Math.cos(err[1]),
+        center + (i + 20) * .015 * Math.sin(ang) + err[0] * Math.sin(err[1])
+      ],
+      out: idx
+    });
+  });
+});
+
+let hidden_units_num = 50,
+    classes_num = angles.length,
+    
+    w1 = new Matrix(points[0].inp.length, hidden_units_num, true),
+    dw1 = new Matrix(points[0].inp.length, hidden_units_num),
+    
+    b1 = new Matrix(hidden_units_num, 1),
+    db1 = new Matrix(hidden_units_num, 1),
+    
+    w2 = new Matrix(hidden_units_num, classes_num, true),
+    dw2 = new Matrix(hidden_units_num, classes_num),
+    
+    b2 = new Matrix(classes_num, 1),
+    db2 = new Matrix(classes_num, 1),
+    
+    data = {
+      inp: new Matrix(points[0].inp.length, points.length),
+      out: new Matrix(classes_num, points.length)
+    },
+    loss, count = 0;
+w1.mul(.01); w2.mul(.01);
+for (let i = points.length - 1; i >= 0; i--) {
+  data.inp.data[0][i] = points[i].inp[0];
+  data.inp.data[1][i] = points[i].inp[1];
+  data.out.data[points[i].out][i] = 1;
+}
+
+const sgd = log => {
+  let z1, a1, e1, z2, a2, e2, d;
+  z1 = Matrix.dot(Matrix.t(w1), data.inp).add(b1);
+  a1 = Matrix.map(z1, e => e > 0 ? e : 0);
+  z2 = Matrix.dot(Matrix.t(w2), a1).add(b2);
+  d = Matrix.max(z2, 'row');
+  a2 = Matrix.sub(z2, d).map(e => Math.exp(e));
+  d = Matrix.sum(a2, 'row');
+  a2.div(d);
+  
+  e2 = Matrix.sub(a2, data.out).div(points.length);
+  e1 = Matrix.dot(w2, e2);
+  d = Matrix.map(z1, e => e > 0 ? 1 : 0);
+  e1.mul(d);
+  
+  dw2.mul(.9).add(Matrix.dot(a1, Matrix.t(e2)).mul(.1));
+  w2.sub(Matrix.mul(dw2, .1));
+  
+  db2.mul(.9).add(Matrix.sum(e2, 'col').mul(.1));
+  b2.sub(Matrix.mul(db2, .1));
+  
+  dw1.mul(.9).add(Matrix.dot(data.inp, Matrix.t(e1)).mul(.1));
+  w1.sub(Matrix.mul(dw1, .1));
+  
+  db1.mul(.9).add(Matrix.sum(e1, 'col').mul(.1));
+  b1.sub(Matrix.mul(db1, .1));
+  
+  if (log) {
+    loss = Matrix.sum(
+      Matrix.sum(
+        Matrix.mul(data.out, Matrix.map(a2, e => Math.log(e))),
+        'row'
+      ),
+      'col'
+    ).data[0][0] / -points.length;
+    console.log(count += 100, loss);
+  }
+};
+
+room.main = () => {
+  for (let i = 0; i < 99; i++) {sgd(); }
+  sgd(true);
+  for (let y = 0; y < room.size; y += 4) {
+    for (let x = 0; x < room.size; x += 4) {
+      let datum = new Matrix([[gPos(x)], [gPos(y, 1)]]),
+          a1 = Matrix.dot(Matrix.t(w1), datum).add(b1).map(e => e > 0 ? e : 0),
+          a2 = Matrix.dot(Matrix.t(w2), a1).add(b2);
+      room.fillStyle = ['#ff7979', '#badc58', '#c7ecee', '#bdc3c7'][
+        a2.data.flat().indexOf(Math.max(...a2.data.flat()))
+      ];
+      room.beginPath();
+      room.fillRect(x, y, 4, 4);
+    }
+  }
+  points.forEach(pt => {
+    room.fillStyle = ['#e74c3c', '#27ae60', '#2980b9', '#8e44ad'][pt.out];
+    room.beginPath();
+    room.arc(cPos(pt.inp[0]), cPos(pt.inp[1], 1), 3, 0, Math.PI * 2);
+    room.fill();
+  });
+};
+
+setInterval(room.main, 1000);
+</script>
+</body>
+</html>
